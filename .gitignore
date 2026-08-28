@@ -1,3 +1,10 @@
 build/
 jitter
 *.o
+
+# SSH 密钥等敏感文件
+20051115wsm
+20051115wsm.pub
+*.pem
+id_rsa
+id_ed25519
