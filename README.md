@@ -1,1 +1,1 @@
-A personnal project for job searching
+A personal project for job searching
