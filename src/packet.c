@@ -9,7 +9,7 @@
 #include <arpa/inet.h>
 
 #include "packet.h"
-
+#include "flow.h"
 
 void parse_packet(
         const struct pcap_pkthdr *header,
@@ -146,9 +146,63 @@ void parse_packet(
         printf("Transport Protocol: TCP\n");
     }
     else if (ip_header->ip_p == IPPROTO_UDP)
+{
+    printf("Transport Protocol: UDP\n");
+
+    const unsigned char *udp_start;
+
+    udp_start = packet
+              + sizeof(struct ether_header)
+              + ip_header_length;
+
+    if (header->caplen <
+        sizeof(struct ether_header)
+        + ip_header_length
+        + sizeof(struct udphdr))
     {
-        printf("Transport Protocol: UDP\n");
+        printf("Packet too short for UDP header\n");
+        return;
     }
+
+    const struct udphdr *udp_header;
+
+    udp_header =
+        (const struct udphdr *)udp_start;
+
+
+    uint16_t src_port =
+        ntohs(udp_header->uh_sport);
+
+    uint16_t dst_port =
+        ntohs(udp_header->uh_dport);
+
+
+    printf("\nUDP Header\n");
+
+    printf("Source Port: %u\n", src_port);
+
+    printf("Destination Port: %u\n", dst_port);
+
+    printf("UDP Length: %u bytes\n",
+           ntohs(udp_header->uh_ulen));
+
+        double arrival_time =
+    (double)header->ts.tv_sec +
+    (double)header->ts.tv_usec / 1000000.0;
+
+    process_flow(
+        ip_header->ip_src.s_addr,
+    ip_header->ip_dst.s_addr,
+    src_port,
+    dst_port,
+    IPPROTO_UDP,
+    arrival_time
+    );
+
+    /*
+     * 后面在这里调用 process_flow()
+     */
+}
     else if (ip_header->ip_p == IPPROTO_ICMP)
     {
         printf("Transport Protocol: ICMP\n");
