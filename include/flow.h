@@ -14,8 +14,17 @@ typedef struct
     uint16_t dst_port;
     uint8_t protocol;
     double last_arrival_time;
-    double last_interval;
+   double last_interval;
     double jitter;
+
+    double total_interval;
+    double max_interval;
+
+    double total_variation;
+
+    double total_jitter;
+    double max_jitter;
+
     unsigned long packet_count;
 }flow_t;
 
@@ -27,5 +36,7 @@ void process_flow(
     uint8_t protocol,
     double arrival_time
 );
+
+void print_all_flow_stats(void);
 
 #endif // FLOW_H

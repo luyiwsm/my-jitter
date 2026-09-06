@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include"capture.h"
+#include"flow.h"
 
 int main(int argc,char **argv)
 {
@@ -10,10 +11,11 @@ int main(int argc,char **argv)
 	}
     printf("Jitter analyzer started\n");
 	
-	if(start_capture(argv[1])!=0)
+	if (start_capture(argv[1], argc >= 3 ? argv[2] : NULL) != 0)
 	{
 		fprintf(stderr, "failed to start packet capture\n");
 		return -1;
 	}
+	print_all_flow_stats();
     return 0;
 }
