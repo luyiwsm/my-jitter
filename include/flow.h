@@ -26,6 +26,7 @@ typedef struct
     double max_jitter;
 
     unsigned long packet_count;
+    int active;
 }flow_t;
 
 void process_flow(
