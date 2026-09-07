@@ -133,8 +133,4 @@ if (ret == -2)
 
 return 0;
 
-    pcap_close(handle);
-
-
-    return (ret == 0) ? 0 : -1;
 }

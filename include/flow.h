@@ -22,7 +22,7 @@ typedef struct
 
     double total_variation;
 
-    double total_jitter;
+    //double total_jitter;
     double max_jitter;
 
     unsigned long packet_count;

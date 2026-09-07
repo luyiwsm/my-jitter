@@ -108,34 +108,20 @@ static flow_t *create_flow(
 {
     flow_t *flow = NULL;
 
-/*
- * First try to reuse an inactive slot.
- */
-for (int i = 0; i < flow_count; i++)
-{
-    if (!flows[i].active)
+    if (flow_count >= MAX_FLOWS)
     {
-        flow = &flows[i];
-        break;
+        fprintf(stderr, "Flow table full\n");
+        return NULL;
     }
-}
-
-/*
- * No inactive slot found.
- * Allocate a new slot at the end.
- */
-    if (flow == NULL)
-    {
-        if (flow_count >= MAX_FLOWS)
-        {
-            fprintf(stderr, "Flow table full\n");
-            return NULL;
-        }
 
     flow = &flows[flow_count];
 
+    printf(
+        "Allocating new flow slot %d\n",
+        flow_count
+    );
+
     flow_count++;
-    }
 
 //    flow_t *flow = &flows[flow_count];
 
@@ -154,7 +140,6 @@ for (int i = 0; i < flow_count; i++)
     flow->last_arrival_time = arrival_time;
     flow->packet_count = 1;
     flow->active = 1;
-    flow_count++;
 
     printf("New flow created\n");
 
@@ -254,8 +239,8 @@ static void update_flow(
             );
             
 
-        flow->total_jitter +=
-            flow->jitter;
+        /*flow->total_jitter +=
+            flow->jitter;*/
 
         if (flow->jitter >
             flow->max_jitter)
@@ -312,7 +297,7 @@ static void print_final_stats(
 
     double avg_interval = 0.0;
     double avg_variation = 0.0;
-    double avg_jitter = 0.0;
+    //double avg_jitter = 0.0;
 
     if (flow->packet_count >= 2)
     {
@@ -327,10 +312,11 @@ static void print_final_stats(
             flow->total_variation /
             (flow->packet_count - 2);
 
-        avg_jitter =
+        /*avg_jitter =
             flow->total_jitter /
-            (flow->packet_count - 2);
+            (flow->packet_count - 2);*/
     }
+
 
     printf(
         "Flow         : %s:%u -> %s:%u\n",
@@ -367,10 +353,10 @@ static void print_final_stats(
         avg_variation * 1000.0
     );
 
-    printf(
+    /*printf(
         "Avg jitter   : %.3f ms\n",
         avg_jitter * 1000.0
-    );
+    );*/
 
     printf(
         "Max jitter   : %.3f ms\n",
@@ -449,8 +435,7 @@ void print_all_flow_stats(void)
 
     for (int i = 0; i < flow_count; i++)
     {
-        if ( !flows[i].active ||
-             flows[i].packet_count < 2)
+        if (flows[i].packet_count < 2)
         {
             continue;
         }
