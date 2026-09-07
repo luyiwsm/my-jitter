@@ -8,7 +8,6 @@
 
 
 #define MAX_FLOWS 1024
-//#define JITTER_GAIN 16.0
 #define FLOW_TIMEOUT 30.0 // seconds
 
 static flow_t flows[MAX_FLOWS];
@@ -108,22 +107,32 @@ static flow_t *create_flow(
 {
     flow_t *flow = NULL;
 
-    if (flow_count >= MAX_FLOWS)
+    /*
+     * Reuse an expired (inactive) slot first.
+     */
+    for (int i = 0; i < flow_count; i++)
     {
-        fprintf(stderr, "Flow table full\n");
-        return NULL;
+        if (!flows[i].active)
+        {
+            flow = &flows[i];
+            break;
+        }
     }
 
-    flow = &flows[flow_count];
+    /*
+     * Otherwise allocate a new slot at the end.
+     */
+    if (flow == NULL)
+    {
+        if (flow_count >= MAX_FLOWS)
+        {
+            fprintf(stderr, "Flow table full\n");
+            return NULL;
+        }
 
-    printf(
-        "Allocating new flow slot %d\n",
-        flow_count
-    );
-
-    flow_count++;
-
-//    flow_t *flow = &flows[flow_count];
+        flow = &flows[flow_count];
+        flow_count++;
+    }
 
     memset(
         flow,
@@ -140,8 +149,6 @@ static flow_t *create_flow(
     flow->last_arrival_time = arrival_time;
     flow->packet_count = 1;
     flow->active = 1;
-
-    printf("New flow created\n");
 
     return flow;
 }
@@ -239,9 +246,6 @@ static void update_flow(
             );
             
 
-        /*flow->total_jitter +=
-            flow->jitter;*/
-
         if (flow->jitter >
             flow->max_jitter)
         {
@@ -297,7 +301,6 @@ static void print_final_stats(
 
     double avg_interval = 0.0;
     double avg_variation = 0.0;
-    //double avg_jitter = 0.0;
 
     if (flow->packet_count >= 2)
     {
@@ -311,10 +314,6 @@ static void print_final_stats(
         avg_variation =
             flow->total_variation /
             (flow->packet_count - 2);
-
-        /*avg_jitter =
-            flow->total_jitter /
-            (flow->packet_count - 2);*/
     }
 
 
@@ -353,13 +352,8 @@ static void print_final_stats(
         avg_variation * 1000.0
     );
 
-    /*printf(
-        "Avg jitter   : %.3f ms\n",
-        avg_jitter * 1000.0
-    );*/
-
     printf(
-        "Max jitter   : %.3f ms\n",
+        "Max EWMA jitter: %.3f ms\n",
         flow->max_jitter * 1000.0
     );
 }

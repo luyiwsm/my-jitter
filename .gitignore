@@ -1,6 +1,9 @@
 build/
 jitter
+test_flow
+test_jitter
 *.o
+*.pcap
 
 # SSH 密钥等敏感文件
 20051115wsm

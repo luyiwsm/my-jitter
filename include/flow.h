@@ -14,7 +14,7 @@ typedef struct
     uint16_t dst_port;
     uint8_t protocol;
     double last_arrival_time;
-   double last_interval;
+    double last_interval;
     double jitter;
 
     double total_interval;
@@ -22,7 +22,6 @@ typedef struct
 
     double total_variation;
 
-    //double total_jitter;
     double max_jitter;
 
     unsigned long packet_count;
