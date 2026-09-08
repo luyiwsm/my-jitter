@@ -97,6 +97,9 @@ static void expire_flows(double current_time)
 /*
  * Create a new flow.
  */
+/*
+ * Create a new flow.
+ */
 static flow_t *create_flow(
         uint32_t src_ip,
         uint32_t dst_ip,
@@ -105,34 +108,20 @@ static flow_t *create_flow(
         uint8_t protocol,
         double arrival_time)
 {
-    flow_t *flow = NULL;
-
-    /*
-     * Reuse an expired (inactive) slot first.
-     */
-    for (int i = 0; i < flow_count; i++)
+    if (flow_count >= MAX_FLOWS)
     {
-        if (!flows[i].active)
-        {
-            flow = &flows[i];
-            break;
-        }
+        fprintf(stderr, "Flow table full\n");
+        return NULL;
     }
 
-    /*
-     * Otherwise allocate a new slot at the end.
-     */
-    if (flow == NULL)
-    {
-        if (flow_count >= MAX_FLOWS)
-        {
-            fprintf(stderr, "Flow table full\n");
-            return NULL;
-        }
+    flow_t *flow = &flows[flow_count];
 
-        flow = &flows[flow_count];
-        flow_count++;
-    }
+    printf(
+        "Allocating new flow slot %d\n",
+        flow_count
+    );
+
+    flow_count++;
 
     memset(
         flow,
@@ -149,6 +138,8 @@ static flow_t *create_flow(
     flow->last_arrival_time = arrival_time;
     flow->packet_count = 1;
     flow->active = 1;
+
+    printf("New flow created\n");
 
     return flow;
 }
@@ -441,3 +432,215 @@ void print_all_flow_stats(void)
         printf("\n");
     }
 }
+
+/*
+ * Export statistics for all completed flows to CSV.
+ */
+int export_flow_stats_csv(const char *filename)
+{
+    FILE *file = fopen(filename, "w");
+    int csv_count = flow_count;
+    if (file == NULL)
+    {
+        perror("Failed to open CSV file");
+        return -1;
+    }
+
+    fprintf(
+        file,
+        "src_ip,dst_ip,src_port,dst_port,protocol,"
+        "packets,avg_interval_ms,max_interval_ms,"
+        "avg_variation_ms,max_ewma_jitter_ms\n"
+    );
+
+    for (int i = 0; i < csv_count; i++)
+    {
+        const flow_t *flow = &flows[i];
+
+        if (flow->packet_count < 2)
+        {
+            continue;
+        }
+
+        char src_ip[INET_ADDRSTRLEN];
+        char dst_ip[INET_ADDRSTRLEN];
+
+        struct in_addr src_addr;
+        struct in_addr dst_addr;
+
+        src_addr.s_addr = flow->src_ip;
+        dst_addr.s_addr = flow->dst_ip;
+
+        if (inet_ntop(
+                AF_INET,
+                &src_addr,
+                src_ip,
+                sizeof(src_ip)) == NULL)
+        {
+            fclose(file);
+            return -1;
+        }
+
+        if (inet_ntop(
+                AF_INET,
+                &dst_addr,
+                dst_ip,
+                sizeof(dst_ip)) == NULL)
+        {
+            fclose(file);
+            return -1;
+        }
+
+        double avg_interval = 0.0;
+        double avg_variation = 0.0;
+
+        if (flow->packet_count >= 2)
+        {
+            avg_interval =
+                flow->total_interval /
+                (flow->packet_count - 1);
+        }
+
+        if (flow->packet_count >= 3)
+        {
+            avg_variation =
+                flow->total_variation /
+                (flow->packet_count - 2);
+        }
+
+        const char *protocol =
+            flow->protocol == IPPROTO_TCP ? "TCP" :
+            flow->protocol == IPPROTO_UDP ? "UDP" :
+            "OTHER";
+
+        fprintf(
+            file,
+            "%s,%s,%u,%u,%s,%lu,%.3f,%.3f,%.3f,%.3f\n",
+            src_ip,
+            dst_ip,
+            flow->src_port,
+            flow->dst_port,
+            protocol,
+            flow->packet_count,
+            avg_interval * 1000.0,
+            flow->max_interval * 1000.0,
+            avg_variation * 1000.0,
+            flow->max_jitter * 1000.0
+        );
+    }
+
+    fclose(file);
+
+    return 0;
+}
+
+int export_flow_stats_json(const char *filename)
+{
+    FILE *file = fopen(filename, "w");
+
+    if (file == NULL)
+    {
+        perror("Failed to open JSON file");
+        return -1;
+    }
+
+    fprintf(file, "{\n");
+    fprintf(file, "  \"flows\": [\n");
+
+    int first_flow = 1;
+
+    for (int i = 0; i < flow_count; i++)
+    {
+        const flow_t *flow = &flows[i];
+
+        if (flow->packet_count < 2)
+        {
+            continue;
+        }
+
+        char src_ip[INET_ADDRSTRLEN];
+        char dst_ip[INET_ADDRSTRLEN];
+
+        struct in_addr src_addr;
+        struct in_addr dst_addr;
+
+        src_addr.s_addr = flow->src_ip;
+        dst_addr.s_addr = flow->dst_ip;
+
+        if (inet_ntop(
+                AF_INET,
+                &src_addr,
+                src_ip,
+                sizeof(src_ip)) == NULL)
+        {
+            fclose(file);
+            return -1;
+        }
+
+        if (inet_ntop(
+                AF_INET,
+                &dst_addr,
+                dst_ip,
+                sizeof(dst_ip)) == NULL)
+        {
+            fclose(file);
+            return -1;
+        }
+
+        double avg_interval = 0.0;
+        double avg_variation = 0.0;
+
+        if (flow->packet_count >= 2)
+        {
+            avg_interval =
+                flow->total_interval /
+                (flow->packet_count - 1);
+        }
+
+        if (flow->packet_count >= 3)
+        {
+            avg_variation =
+                flow->total_variation /
+                (flow->packet_count - 2);
+        }
+
+        const char *protocol =
+            flow->protocol == IPPROTO_TCP ? "TCP" :
+            flow->protocol == IPPROTO_UDP ? "UDP" :
+            "OTHER";
+
+        if (!first_flow)
+        {
+            fprintf(file, ",\n");
+        }
+
+        fprintf(file, "    {\n");
+        fprintf(file, "      \"src_ip\": \"%s\",\n", src_ip);
+        fprintf(file, "      \"dst_ip\": \"%s\",\n", dst_ip);
+        fprintf(file, "      \"src_port\": %u,\n", flow->src_port);
+        fprintf(file, "      \"dst_port\": %u,\n", flow->dst_port);
+        fprintf(file, "      \"protocol\": \"%s\",\n", protocol);
+        fprintf(file, "      \"packets\": %lu,\n", flow->packet_count);
+        fprintf(file, "      \"avg_interval_ms\": %.3f,\n",
+                avg_interval * 1000.0);
+        fprintf(file, "      \"max_interval_ms\": %.3f,\n",
+                flow->max_interval * 1000.0);
+        fprintf(file, "      \"avg_variation_ms\": %.3f,\n",
+                avg_variation * 1000.0);
+        fprintf(file, "      \"max_ewma_jitter_ms\": %.3f\n",
+                flow->max_jitter * 1000.0);
+        fprintf(file, "    }");
+
+        first_flow = 0;
+    }
+
+    fprintf(file, "\n");
+    fprintf(file, "  ]\n");
+    fprintf(file, "}\n");
+
+    fclose(file);
+
+    return 0;
+}
+
+

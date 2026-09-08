@@ -1,7 +1,10 @@
 build/
 jitter
+jitter_asan
+test_flow_asan
 test_flow
 test_jitter
+test_jitter_asan
 *.o
 *.pcap
 
@@ -11,3 +14,4 @@ test_jitter
 *.pem
 id_rsa
 id_ed25519
+result.csv

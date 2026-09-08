@@ -35,7 +35,7 @@ static void packet_handler(
 
 
 
-int start_capture(char *device, const char *filter)
+int start_capture(const char *device, const char *filter)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
 

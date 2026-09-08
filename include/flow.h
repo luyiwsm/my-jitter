@@ -39,4 +39,7 @@ void process_flow(
 
 void print_all_flow_stats(void);
 
+int export_flow_stats_csv(const char *filename);
+int export_flow_stats_json(const char *filename);
+
 #endif // FLOW_H
