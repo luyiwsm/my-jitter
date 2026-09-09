@@ -1,12 +1,19 @@
+# 编译产物
 build/
 jitter
 jitter_asan
-test_flow_asan
 test_flow
+test_flow_asan
 test_jitter
 test_jitter_asan
+test_packet
+test_packet_asan
 *.o
+
+# 抓包输出
 *.pcap
+result.csv
+result.json
 
 # SSH 密钥等敏感文件
 20051115wsm
@@ -14,4 +21,3 @@ test_jitter_asan
 *.pem
 id_rsa
 id_ed25519
-result.csv

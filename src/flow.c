@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
@@ -8,7 +9,7 @@
 
 
 #define MAX_FLOWS 1024
-#define FLOW_TIMEOUT 30.0 // seconds
+#define FLOW_TIMEOUT 30.0 /* seconds */
 
 static flow_t flows[MAX_FLOWS];
 static int flow_count = 0;
@@ -34,7 +35,7 @@ static int same_flow(
 
 
 /*
- * Find an existing flow.
+ * Find an existing active flow.
  *
  * Return:
  *   pointer to flow if found
@@ -53,6 +54,7 @@ static flow_t *find_flow(
         {
             continue;
         }
+
         if (same_flow(
                 &flows[i],
                 src_ip,
@@ -69,6 +71,10 @@ static flow_t *find_flow(
 }
 
 
+/*
+ * Expire flows that have been idle for longer than
+ * FLOW_TIMEOUT seconds.
+ */
 static void expire_flows(double current_time)
 {
     for (int i = 0; i < flow_count; i++)
@@ -94,11 +100,11 @@ static void expire_flows(double current_time)
     }
 }
 
+
 /*
  * Create a new flow.
- */
-/*
- * Create a new flow.
+ *
+ * Reuse an inactive slot when possible.
  */
 static flow_t *create_flow(
         uint32_t src_ip,
@@ -166,6 +172,7 @@ static flow_t *create_flow(
     return flow;
 }
 
+
 /*
  * Update statistics for an existing flow.
  */
@@ -173,7 +180,6 @@ void update_flow(
         flow_t *flow,
         double arrival_time)
 {
-
     /*
      * Inter-arrival interval:
      *
@@ -192,8 +198,6 @@ void update_flow(
             stderr,
             "Warning: negative packet interval\n"
         );
-
-        //flow->last_arrival_time = arrival_time;
 
         return;
     }
@@ -256,7 +260,6 @@ void update_flow(
                 flow->jitter,
                 variation
             );
-            
 
         if (flow->jitter >
             flow->max_jitter)
@@ -283,6 +286,103 @@ void update_flow(
 
 
 /*
+ * Calculated statistics derived from a flow.
+ */
+typedef struct
+{
+    double avg_interval;
+    double avg_variation;
+} flow_stats_t;
+
+
+/*
+ * Calculate derived statistics for a flow.
+ */
+static flow_stats_t calculate_flow_stats(
+        const flow_t *flow)
+{
+    flow_stats_t stats = {0};
+
+    if (flow->packet_count >= 2)
+    {
+        stats.avg_interval =
+            flow->total_interval /
+            (flow->packet_count - 1);
+    }
+
+    if (flow->packet_count >= 3)
+    {
+        stats.avg_variation =
+            flow->total_variation /
+            (flow->packet_count - 2);
+    }
+
+    return stats;
+}
+
+
+/*
+ * Convert protocol number to a human-readable name.
+ */
+static const char *protocol_name(uint8_t protocol)
+{
+    switch (protocol)
+    {
+        case IPPROTO_TCP:
+            return "TCP";
+
+        case IPPROTO_UDP:
+            return "UDP";
+
+        default:
+            return "OTHER";
+    }
+}
+
+
+/*
+ * Convert flow IP addresses to strings.
+ *
+ * Return:
+ *   0  on success
+ *  -1  on failure
+ */
+static int flow_ip_strings(
+        const flow_t *flow,
+        char *src_ip,
+        size_t src_ip_size,
+        char *dst_ip,
+        size_t dst_ip_size)
+{
+    struct in_addr src_addr;
+    struct in_addr dst_addr;
+
+    src_addr.s_addr = flow->src_ip;
+    dst_addr.s_addr = flow->dst_ip;
+
+    if (inet_ntop(
+            AF_INET,
+            &src_addr,
+            src_ip,
+            src_ip_size) == NULL)
+    {
+        return -1;
+    }
+
+    if (inet_ntop(
+            AF_INET,
+            &dst_addr,
+            dst_ip,
+            dst_ip_size) == NULL)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/*
  * Print final statistics for one flow.
  */
 static void print_final_stats(
@@ -291,43 +391,23 @@ static void print_final_stats(
     char src_ip[INET_ADDRSTRLEN];
     char dst_ip[INET_ADDRSTRLEN];
 
-    struct in_addr src_addr;
-    struct in_addr dst_addr;
-
-    src_addr.s_addr = flow->src_ip;
-    dst_addr.s_addr = flow->dst_ip;
-
-    inet_ntop(
-        AF_INET,
-        &src_addr,
-        src_ip,
-        sizeof(src_ip)
-    );
-
-    inet_ntop(
-        AF_INET,
-        &dst_addr,
-        dst_ip,
-        sizeof(dst_ip)
-    );
-
-    double avg_interval = 0.0;
-    double avg_variation = 0.0;
-
-    if (flow->packet_count >= 2)
+    if (flow_ip_strings(
+            flow,
+            src_ip,
+            sizeof(src_ip),
+            dst_ip,
+            sizeof(dst_ip)) != 0)
     {
-        avg_interval =
-            flow->total_interval /
-            (flow->packet_count - 1);
+        fprintf(
+            stderr,
+            "Failed to format flow IP address\n"
+        );
+
+        return;
     }
 
-    if (flow->packet_count >= 3)
-    {
-        avg_variation =
-            flow->total_variation /
-            (flow->packet_count - 2);
-    }
-
+    flow_stats_t stats =
+        calculate_flow_stats(flow);
 
     printf(
         "Flow         : %s:%u -> %s:%u\n",
@@ -339,9 +419,7 @@ static void print_final_stats(
 
     printf(
         "Protocol     : %s\n",
-        flow->protocol == IPPROTO_TCP ? "TCP" :
-        flow->protocol == IPPROTO_UDP ? "UDP" :
-        "OTHER"
+        protocol_name(flow->protocol)
     );
 
     printf(
@@ -351,7 +429,7 @@ static void print_final_stats(
 
     printf(
         "Avg interval : %.3f ms\n",
-        avg_interval * 1000.0
+        stats.avg_interval * 1000.0
     );
 
     printf(
@@ -361,7 +439,7 @@ static void print_final_stats(
 
     printf(
         "Avg variation: %.3f ms\n",
-        avg_variation * 1000.0
+        stats.avg_variation * 1000.0
     );
 
     printf(
@@ -416,6 +494,7 @@ void process_flow(
         protocol,
         arrival_time
     );
+
     if (new_flow == NULL)
     {
         fprintf(stderr, "Failed to create flow\n");
@@ -454,13 +533,14 @@ void print_all_flow_stats(void)
     }
 }
 
+
 /*
- * Export statistics for all completed flows to CSV.
+ * Export statistics for all flows to CSV.
  */
 int export_flow_stats_csv(const char *filename)
 {
     FILE *file = fopen(filename, "w");
-    int csv_count = flow_count;
+
     if (file == NULL)
     {
         perror("Failed to open CSV file");
@@ -474,7 +554,7 @@ int export_flow_stats_csv(const char *filename)
         "avg_variation_ms,max_ewma_jitter_ms\n"
     );
 
-    for (int i = 0; i < csv_count; i++)
+    for (int i = 0; i < flow_count; i++)
     {
         const flow_t *flow = &flows[i];
 
@@ -486,53 +566,19 @@ int export_flow_stats_csv(const char *filename)
         char src_ip[INET_ADDRSTRLEN];
         char dst_ip[INET_ADDRSTRLEN];
 
-        struct in_addr src_addr;
-        struct in_addr dst_addr;
-
-        src_addr.s_addr = flow->src_ip;
-        dst_addr.s_addr = flow->dst_ip;
-
-        if (inet_ntop(
-                AF_INET,
-                &src_addr,
+        if (flow_ip_strings(
+                flow,
                 src_ip,
-                sizeof(src_ip)) == NULL)
-        {
-            fclose(file);
-            return -1;
-        }
-
-        if (inet_ntop(
-                AF_INET,
-                &dst_addr,
+                sizeof(src_ip),
                 dst_ip,
-                sizeof(dst_ip)) == NULL)
+                sizeof(dst_ip)) != 0)
         {
             fclose(file);
             return -1;
         }
 
-        double avg_interval = 0.0;
-        double avg_variation = 0.0;
-
-        if (flow->packet_count >= 2)
-        {
-            avg_interval =
-                flow->total_interval /
-                (flow->packet_count - 1);
-        }
-
-        if (flow->packet_count >= 3)
-        {
-            avg_variation =
-                flow->total_variation /
-                (flow->packet_count - 2);
-        }
-
-        const char *protocol =
-            flow->protocol == IPPROTO_TCP ? "TCP" :
-            flow->protocol == IPPROTO_UDP ? "UDP" :
-            "OTHER";
+        flow_stats_t stats =
+            calculate_flow_stats(flow);
 
         fprintf(
             file,
@@ -541,11 +587,11 @@ int export_flow_stats_csv(const char *filename)
             dst_ip,
             flow->src_port,
             flow->dst_port,
-            protocol,
+            protocol_name(flow->protocol),
             flow->packet_count,
-            avg_interval * 1000.0,
+            stats.avg_interval * 1000.0,
             flow->max_interval * 1000.0,
-            avg_variation * 1000.0,
+            stats.avg_variation * 1000.0,
             flow->max_jitter * 1000.0
         );
     }
@@ -555,6 +601,10 @@ int export_flow_stats_csv(const char *filename)
     return 0;
 }
 
+
+/*
+ * Export statistics for all flows to JSON.
+ */
 int export_flow_stats_json(const char *filename)
 {
     FILE *file = fopen(filename, "w");
@@ -582,53 +632,19 @@ int export_flow_stats_json(const char *filename)
         char src_ip[INET_ADDRSTRLEN];
         char dst_ip[INET_ADDRSTRLEN];
 
-        struct in_addr src_addr;
-        struct in_addr dst_addr;
-
-        src_addr.s_addr = flow->src_ip;
-        dst_addr.s_addr = flow->dst_ip;
-
-        if (inet_ntop(
-                AF_INET,
-                &src_addr,
+        if (flow_ip_strings(
+                flow,
                 src_ip,
-                sizeof(src_ip)) == NULL)
-        {
-            fclose(file);
-            return -1;
-        }
-
-        if (inet_ntop(
-                AF_INET,
-                &dst_addr,
+                sizeof(src_ip),
                 dst_ip,
-                sizeof(dst_ip)) == NULL)
+                sizeof(dst_ip)) != 0)
         {
             fclose(file);
             return -1;
         }
 
-        double avg_interval = 0.0;
-        double avg_variation = 0.0;
-
-        if (flow->packet_count >= 2)
-        {
-            avg_interval =
-                flow->total_interval /
-                (flow->packet_count - 1);
-        }
-
-        if (flow->packet_count >= 3)
-        {
-            avg_variation =
-                flow->total_variation /
-                (flow->packet_count - 2);
-        }
-
-        const char *protocol =
-            flow->protocol == IPPROTO_TCP ? "TCP" :
-            flow->protocol == IPPROTO_UDP ? "UDP" :
-            "OTHER";
+        flow_stats_t stats =
+            calculate_flow_stats(flow);
 
         if (!first_flow)
         {
@@ -640,14 +656,15 @@ int export_flow_stats_json(const char *filename)
         fprintf(file, "      \"dst_ip\": \"%s\",\n", dst_ip);
         fprintf(file, "      \"src_port\": %u,\n", flow->src_port);
         fprintf(file, "      \"dst_port\": %u,\n", flow->dst_port);
-        fprintf(file, "      \"protocol\": \"%s\",\n", protocol);
+        fprintf(file, "      \"protocol\": \"%s\",\n",
+                protocol_name(flow->protocol));
         fprintf(file, "      \"packets\": %lu,\n", flow->packet_count);
         fprintf(file, "      \"avg_interval_ms\": %.3f,\n",
-                avg_interval * 1000.0);
+                stats.avg_interval * 1000.0);
         fprintf(file, "      \"max_interval_ms\": %.3f,\n",
                 flow->max_interval * 1000.0);
         fprintf(file, "      \"avg_variation_ms\": %.3f,\n",
-                avg_variation * 1000.0);
+                stats.avg_variation * 1000.0);
         fprintf(file, "      \"max_ewma_jitter_ms\": %.3f\n",
                 flow->max_jitter * 1000.0);
         fprintf(file, "    }");
@@ -663,5 +680,3 @@ int export_flow_stats_json(const char *filename)
 
     return 0;
 }
-
-
