@@ -4,6 +4,7 @@
 
 #include "capture.h"
 #include "packet.h"
+#include "flow.h"
 
 static pcap_t *capture_handle = NULL;
 static void handle_sigint(int signal)
@@ -22,15 +23,19 @@ static void packet_handler(
 {
     (void)args;
 
-    /*printf("Packet captured\n");
+    packet_info_t info;
 
-    printf("Time: %ld.%06ld\n",
-           (long)header->ts.tv_sec,
-           (long)header->ts.tv_usec);*/
-
-    parse_packet(header, packet);
-
-   // printf("\n");
+    if (parse_packet(header, packet, &info) == 0)
+    {
+        process_flow(
+            info.src_ip,
+            info.dst_ip,
+            info.src_port,
+            info.dst_port,
+            info.protocol,
+            info.arrival_time
+        );
+    }
 }
 
 

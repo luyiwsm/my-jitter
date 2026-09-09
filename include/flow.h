@@ -37,6 +37,21 @@ void process_flow(
     double arrival_time
 );
 
+/*
+ * Find an active flow by 5-tuple.
+ *
+ * Return:
+ *   read-only pointer to the flow if found
+ *   NULL if not found
+ */
+const flow_t *flow_find(
+    uint32_t src_ip,
+    uint32_t dst_ip,
+    uint16_t src_port,
+    uint16_t dst_port,
+    uint8_t protocol
+);
+
 void print_all_flow_stats(void);
 
 int export_flow_stats_csv(const char *filename);

@@ -9,18 +9,18 @@
 #include <arpa/inet.h>
 
 #include "packet.h"
-#include "flow.h"
 
-void parse_packet(
+int parse_packet(
         const struct pcap_pkthdr *header,
-        const unsigned char *packet)
+        const unsigned char *packet,
+        packet_info_t *info)
 {
     /*
      * Ethernet header
      */
     if (header->caplen < sizeof(struct ether_header))
     {
-        return;
+        return -1;
     }
 
     const struct ether_header *eth =
@@ -31,7 +31,7 @@ void parse_packet(
      */
     if (ntohs(eth->ether_type) != ETHERTYPE_IP)
     {
-        return;
+        return -1;
     }
 
     /*
@@ -40,7 +40,7 @@ void parse_packet(
     if (header->caplen <
         sizeof(struct ether_header) + sizeof(struct ip))
     {
-        return;
+        return -1;
     }
 
     const struct ip *ip_header =
@@ -51,13 +51,13 @@ void parse_packet(
 
     if (ip_header_length < 20)
     {
-        return;
+        return -1;
     }
 
     if (header->caplen <
         sizeof(struct ether_header) + ip_header_length)
     {
-        return;
+        return -1;
     }
 
     /*
@@ -81,7 +81,7 @@ void parse_packet(
             + ip_header_length
             + sizeof(struct udphdr))
         {
-            return;
+            return -1;
         }
 
         const struct udphdr *udp_header =
@@ -101,7 +101,7 @@ void parse_packet(
             + ip_header_length
             + sizeof(struct tcphdr))
         {
-            return;
+            return -1;
         }
 
         const struct tcphdr *tcp_header =
@@ -116,25 +116,20 @@ void parse_packet(
      */
     else
     {
-        return;
+        return -1;
     }
 
     /*
-     * libpcap capture timestamp
+     * Fill the parsed result.
      */
-    double arrival_time =
+    info->src_ip = ip_header->ip_src.s_addr;
+    info->dst_ip = ip_header->ip_dst.s_addr;
+    info->src_port = src_port;
+    info->dst_port = dst_port;
+    info->protocol = ip_header->ip_p;
+    info->arrival_time =
         (double)header->ts.tv_sec +
         (double)header->ts.tv_usec / 1000000.0;
 
-    /*
-     * Pass the packet to flow manager
-     */
-    process_flow(
-        ip_header->ip_src.s_addr,
-        ip_header->ip_dst.s_addr,
-        src_port,
-        dst_port,
-        ip_header->ip_p,
-        arrival_time
-    );
+    return 0;
 }

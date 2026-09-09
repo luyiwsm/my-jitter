@@ -35,10 +35,11 @@ static void test_short_ethernet(void)
 {
     unsigned char packet[10] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: short Ethernet frame\n");
 }
@@ -52,6 +53,7 @@ static void test_non_ipv4(void)
 {
     unsigned char packet[ETH_LEN] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -60,7 +62,7 @@ static void test_non_ipv4(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: non-IPv4 frame\n");
 }
@@ -74,6 +76,7 @@ static void test_short_ip_header(void)
 {
     unsigned char packet[ETH_LEN + 10] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -82,7 +85,7 @@ static void test_short_ip_header(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: short IPv4 header\n");
 }
@@ -96,6 +99,7 @@ static void test_invalid_ip_header_length(void)
 {
     unsigned char packet[ETH_LEN + IP_LEN] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -111,7 +115,7 @@ static void test_invalid_ip_header_length(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: invalid IPv4 IHL\n");
 }
@@ -126,6 +130,7 @@ static void test_truncated_ip_header(void)
 {
     unsigned char packet[ETH_LEN + IP_LEN] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -141,7 +146,7 @@ static void test_truncated_ip_header(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: truncated IPv4 header\n");
 }
@@ -155,6 +160,7 @@ static void test_short_udp_header(void)
 {
     unsigned char packet[ETH_LEN + IP_LEN + 4] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -170,7 +176,7 @@ static void test_short_udp_header(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: short UDP header\n");
 }
@@ -184,6 +190,7 @@ static void test_short_tcp_header(void)
 {
     unsigned char packet[ETH_LEN + IP_LEN + 10] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -199,7 +206,7 @@ static void test_short_tcp_header(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: short TCP header\n");
 }
@@ -213,6 +220,7 @@ static void test_unsupported_protocol(void)
 {
     unsigned char packet[ETH_LEN + IP_LEN] = {0};
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -228,7 +236,7 @@ static void test_unsupported_protocol(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == -1);
 
     printf("PASS: unsupported protocol\n");
 }
@@ -236,7 +244,8 @@ static void test_unsupported_protocol(void)
 
 /*
  * Test 9:
- * Valid UDP packet should reach flow manager.
+ * Valid UDP packet should parse successfully
+ * with the correct 5-tuple.
  */
 static void test_valid_udp(void)
 {
@@ -245,6 +254,7 @@ static void test_valid_udp(void)
     ] = {0};
 
     struct pcap_pkthdr header;
+    packet_info_t info;
 
     struct ether_header *eth =
         (struct ether_header *)packet;
@@ -280,7 +290,20 @@ static void test_valid_udp(void)
 
     init_header(&header, sizeof(packet));
 
-    parse_packet(&header, packet);
+    assert(parse_packet(&header, packet, &info) == 0);
+
+    struct in_addr expected_src;
+    struct in_addr expected_dst;
+
+    inet_pton(AF_INET, "127.0.0.1", &expected_src);
+    inet_pton(AF_INET, "127.0.0.2", &expected_dst);
+
+    assert(info.src_ip == expected_src.s_addr);
+    assert(info.dst_ip == expected_dst.s_addr);
+    assert(info.src_port == 5000);
+    assert(info.dst_port == 6000);
+    assert(info.protocol == IPPROTO_UDP);
+    assert(info.arrival_time == 100.0);
 
     printf("PASS: valid UDP packet\n");
 }

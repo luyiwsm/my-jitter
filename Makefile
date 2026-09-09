@@ -34,9 +34,9 @@ $(TEST_JITTER): tests/test_jitter.c src/jitter.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 $(TEST_FLOW): tests/test_flow.c src/flow.c src/jitter.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ $(LDFLAGS) -lm
 
-$(TEST_PACKET): tests/test_packet.c src/packet.c src/flow.c src/jitter.c
+$(TEST_PACKET): tests/test_packet.c src/packet.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 test: $(TEST_JITTER) $(TEST_FLOW) $(TEST_PACKET)
@@ -51,9 +51,9 @@ $(ASAN_TEST_JITTER): tests/test_jitter.c src/jitter.c
 	$(CC) $(CFLAGS) $(ASAN_FLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 $(ASAN_TEST_FLOW): tests/test_flow.c src/flow.c src/jitter.c
-	$(CC) $(CFLAGS) $(ASAN_FLAGS) $(CPPFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(ASAN_FLAGS) $(CPPFLAGS) $^ -o $@ $(LDFLAGS) -lm
 
-$(ASAN_TEST_PACKET): tests/test_packet.c src/packet.c src/flow.c src/jitter.c
+$(ASAN_TEST_PACKET): tests/test_packet.c src/packet.c
 	$(CC) $(CFLAGS) $(ASAN_FLAGS) $(CPPFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 asan: $(ASAN_TARGET) $(ASAN_TEST_JITTER) $(ASAN_TEST_FLOW) $(ASAN_TEST_PACKET)

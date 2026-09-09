@@ -72,6 +72,43 @@ static flow_t *find_flow(
 
 
 /*
+ * Find an active flow by 5-tuple (read-only access).
+ *
+ * Return:
+ *   pointer to the flow if found
+ *   NULL if not found
+ */
+const flow_t *flow_find(
+        uint32_t src_ip,
+        uint32_t dst_ip,
+        uint16_t src_port,
+        uint16_t dst_port,
+        uint8_t protocol)
+{
+    for (int i = 0; i < flow_count; i++)
+    {
+        if (!flows[i].active)
+        {
+            continue;
+        }
+
+        if (same_flow(
+                &flows[i],
+                src_ip,
+                dst_ip,
+                src_port,
+                dst_port,
+                protocol))
+        {
+            return &flows[i];
+        }
+    }
+
+    return NULL;
+}
+
+
+/*
  * Expire flows that have been idle for longer than
  * FLOW_TIMEOUT seconds.
  */
