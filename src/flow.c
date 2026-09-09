@@ -108,20 +108,42 @@ static flow_t *create_flow(
         uint8_t protocol,
         double arrival_time)
 {
-    if (flow_count >= MAX_FLOWS)
+    int slot = -1;
+
+    /*
+     * First try to reuse an inactive flow slot.
+     */
+    for (int i = 0; i < flow_count; i++)
     {
-        fprintf(stderr, "Flow table full\n");
-        return NULL;
+        if (!flows[i].active)
+        {
+            slot = i;
+            break;
+        }
     }
 
-    flow_t *flow = &flows[flow_count];
+    /*
+     * No inactive slot available.
+     * Allocate a new slot if the table is not full.
+     */
+    if (slot == -1)
+    {
+        if (flow_count >= MAX_FLOWS)
+        {
+            fprintf(stderr, "Flow table full\n");
+            return NULL;
+        }
+
+        slot = flow_count;
+        flow_count++;
+    }
+
+    flow_t *flow = &flows[slot];
 
     printf(
         "Allocating new flow slot %d\n",
-        flow_count
+        slot
     );
-
-    flow_count++;
 
     memset(
         flow,
@@ -144,15 +166,13 @@ static flow_t *create_flow(
     return flow;
 }
 
-
 /*
  * Update statistics for an existing flow.
  */
-static void update_flow(
+void update_flow(
         flow_t *flow,
         double arrival_time)
 {
-    flow->packet_count++;
 
     /*
      * Inter-arrival interval:
@@ -173,11 +193,12 @@ static void update_flow(
             "Warning: negative packet interval\n"
         );
 
-        flow->last_arrival_time =
-            arrival_time;
+        //flow->last_arrival_time = arrival_time;
 
         return;
     }
+
+    flow->packet_count++;
 
     flow->total_interval +=
         current_interval;
