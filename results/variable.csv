@@ -1,0 +1,2 @@
+src_ip,dst_ip,src_port,dst_port,protocol,packets,avg_interval_ms,max_interval_ms,avg_variation_ms,max_ewma_jitter_ms
+127.0.0.1,127.0.0.1,35178,19999,UDP,100,99.012,130.401,19.232,21.009

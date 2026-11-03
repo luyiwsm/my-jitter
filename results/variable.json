@@ -1,0 +1,16 @@
+{
+  "flows": [
+    {
+      "src_ip": "127.0.0.1",
+      "dst_ip": "127.0.0.1",
+      "src_port": 35178,
+      "dst_port": 19999,
+      "protocol": "UDP",
+      "packets": 100,
+      "avg_interval_ms": 99.012,
+      "max_interval_ms": 130.401,
+      "avg_variation_ms": 19.232,
+      "max_ewma_jitter_ms": 21.009
+    }
+  ]
+}
