@@ -1,0 +1,1 @@
+gcc -Wall -Wextra -Wpedantic -g -Iinclude src/capture.c src/flow.c src/jitter.c src/main.c src/packet.c -o jitter  -lpcap

@@ -1,489 +1,180 @@
 # my-jitter
 
-基于 `libpcap` 的实时网络抖动分析器，使用 C 语言实现。
+用 C 和 libpcap 实现的网络数据包到达间隔分析器。
 
-A real-time network jitter analyzer written in C and built on `libpcap`.
+程序从指定网卡抓取 Ethernet / IPv4 / TCP、UDP 数据包，按方向性五元组归类，统计到达间隔、相邻间隔的变化量及其 EWMA 平滑值，并支持导出 CSV、JSON。
 
----
+项目采用单线程、固定大小流表和普通函数，主要用于练习抓包、协议解析、流状态管理和统计计算。源码阅读可从 [代码阅读说明](docs/code-reading.md) 开始。
 
-## 简介 / Introduction
+## 编译
 
-`my-jitter` 是一个面向 IPv4 网络流量的实时抖动分析工具。程序通过 `libpcap` 从指定网络接口捕获数据包，对 Ethernet、IPv4、TCP/UDP 协议头进行解析，并根据五元组对数据包进行流分类，随后统计每条流的到达间隔、间隔变化以及 EWMA 抖动。
-
-Jitter analysis is useful for evaluating the timing stability of packet streams in applications such as VoIP, video conferencing, streaming, and other real-time network services.
-
-The analyzer captures packets from a live network interface using `libpcap`, parses Ethernet/IPv4/TCP/UDP headers, groups packets by a directional 5-tuple, and estimates interarrival jitter for each flow.
-
----
-
-## Features / 功能
-
-* **Live packet capture** — 基于 `libpcap` 实时抓取网络数据包。
-* **Protocol parsing** — 解析 Ethernet、IPv4、TCP 和 UDP 报文头，并进行边界检查。
-* **5-tuple flow tracking** — 根据源 IP、目的 IP、源端口、目的端口和协议识别网络流。
-* **Flow timeout** — 流在 30 秒无数据后进入 inactive 状态。
-* **Slot reuse** — inactive flow slot 可以被新的网络流重新利用，避免流表永久占用。
-* **Interarrival statistics** — 统计数据包到达间隔、最大间隔和平均间隔。
-* **Jitter estimation** — 使用基于 RFC 3550 思路的 EWMA 方法估计到达间隔抖动。
-* **CSV / JSON export** — 支持将流统计信息导出为 CSV 和 JSON。
-* **Unit tests** — 覆盖 jitter、flow 和 packet parser 三个核心模块。
-* **AddressSanitizer** — 使用 AddressSanitizer 对核心测试和完整程序进行内存安全检查。
-
-### English
-
-* Live packet capture with `libpcap`
-* Ethernet / IPv4 / TCP / UDP packet parsing
-* Directional 5-tuple flow tracking
-* 30-second idle flow timeout
-* Inactive flow slot reuse
-* Interarrival interval statistics
-* EWMA-based interarrival jitter estimation inspired by RFC 3550
-* CSV and JSON statistics export
-* Unit tests for jitter, flow management, and packet parsing
-* AddressSanitizer-based memory safety validation
-
----
-
-## Architecture / 系统架构
-
-```text
-                  Network Interface
-                         │
-                         ▼
-                ┌─────────────────┐
-                │    libpcap      │
-                │ Packet Capture  │
-                └────────┬────────┘
-                         │
-                         ▼
-                ┌─────────────────┐
-                │  Packet Parser  │
-                │ Ethernet / IPv4 │
-                │ TCP / UDP       │
-                └────────┬────────┘
-                         │
-                         ▼
-                ┌─────────────────┐
-                │  Flow Tracking  │
-                │   5-tuple       │
-                │ timeout / reuse │
-                └────────┬────────┘
-                         │
-                         ▼
-                ┌─────────────────┐
-                │ Jitter Estimator│
-                │      EWMA       │
-                └────────┬────────┘
-                         │
-                 ┌───────┴────────┐
-                 ▼                ▼
-             Console         CSV / JSON
-```
-
-### Module responsibilities / 模块职责
-
-```text
-src/capture.c
-    Packet capture using libpcap
-
-src/packet.c
-    Ethernet / IPv4 / TCP / UDP parsing
-    Packet boundary validation
-
-src/flow.c
-    5-tuple flow identification
-    Flow lifecycle management
-    Interarrival statistics
-    Flow statistics export
-
-src/jitter.c
-    EWMA-based jitter estimation
-
-src/main.c
-    Program entry point
-    Capture and output control
-```
-
----
-
-## Flow Model / 流模型
-
-每条流使用一个方向性的五元组进行标识：
-
-```text
-(src IP,
- dst IP,
- src port,
- dst port,
- protocol)
-```
-
-例如：
-
-```text
-192.168.1.10:5000
-        │
-        │ UDP
-        ▼
-192.168.1.20:9999
-```
-
-反方向：
-
-```text
-192.168.1.20:9999
-        │
-        │ UDP
-        ▼
-192.168.1.10:5000
-```
-
-会被视为另一条独立 Flow。
-
-流表最多维护 1024 个 Flow slot。Flow 在超过 30 秒没有收到新的数据包后进入 inactive 状态，其 slot 可以被新的 Flow 重新使用。
-
----
-
-## Jitter Algorithm / 抖动算法
-
-本项目采用**基于 RFC 3550 思路的到达间隔抖动 EWMA 估计方法**。
-
-对于连续数据包：
-
-```text
-I(n) = t(n) - t(n-1)
-```
-
-其中 `I(n)` 为当前数据包与前一个数据包之间的到达时间间隔。
-
-相邻两个 interval 的变化量为：
-
-```text
-D(n) = I(n) - I(n-1)
-```
-
-使用其绝对值计算 variation：
-
-```text
-V(n) = |I(n) - I(n-1)|
-```
-
-随后使用 EWMA 更新 jitter：
-
-```text
-J(n) = J(n-1) + (V(n) - J(n-1)) / 16
-```
-
-其中：
-
-* `I(n)`：packet interarrival interval
-* `V(n)`：相邻 interval 的绝对变化量
-* `J(n)`：EWMA jitter estimate
-* `1/16`：平滑增益
-
-该实现用于估计**数据包到达间隔的变化程度**，属于轻量级 interarrival jitter estimator，并非完整的 RTP 接收端实现。
-
-RFC 3550 reference:
-
-* RFC 3550, Section 6.4.1 — RTP Receiver Reports
-
----
-
-## Build / 编译
-
-### Requirements / 环境要求
-
-* Linux / WSL
-* GCC
-* GNU Make
-* `libpcap`
-
-Debian / Ubuntu：
+环境：Linux 或 WSL Ubuntu，GCC、GNU Make、libpcap 开发库。在项目根目录执行：
 
 ```bash
+# Ubuntu / Debian 安装依赖
+sudo apt update
 sudo apt install build-essential libpcap-dev
-```
 
-### Build
-
-```bash
 make
 ```
 
-生成：
+生成可执行文件 `./jitter`。清理编译产物使用 `make clean`；修改头文件后可用 `make -B` 强制重新编译。
 
-```text
-./jitter
-```
+## 运行
 
-清理：
+先用 `ip link` 查看网卡名称，下面以 `eth0` 为例。抓包通常需要相应权限，示例使用 `sudo`。
 
 ```bash
-make clean
-```
+# 查看帮助，不需要抓包权限
+./jitter --help
 
----
-
-## Usage / 使用
-
-基本用法：
-
-```bash
-sudo ./jitter <interface>
-```
-
-例如：
-
-```bash
+# 抓取数据，分析其中支持的 IPv4 TCP/UDP 包
 sudo ./jitter eth0
+
+# 仅抓取 UDP，或进一步限定端口
+sudo ./jitter eth0 --filter "udp"
+sudo ./jitter eth0 --filter "udp port 9999"
+
+# 停止时同时导出 CSV 和 JSON
+sudo ./jitter eth0 --filter "udp" --csv result.csv --json result.json
 ```
 
-使用 BPF filter：
+按 **Ctrl+C** 停止抓包，随后输出汇总并执行指定的导出。过滤表达式须通过 `-f` 或 `--filter` 传入；程序不接受直接跟在网卡名后的裸表达式。
 
-```bash
-sudo ./jitter eth0 "udp"
-```
+| 选项 | 含义 |
+|---|---|
+| `-f, --filter <expr>` | libpcap 的 BPF 过滤表达式 |
+| `-o, --csv <file>` | 导出 CSV，覆盖同名文件 |
+| `-j, --json <file>` | 导出 JSON，覆盖同名文件 |
+| `-h, --help` | 显示帮助 |
 
-指定 UDP 端口：
+网卡名放在选项前。输出目录需要事先存在；未指定导出选项时，仅输出到终端。
 
-```bash
-sudo ./jitter eth0 "udp port 9999"
-```
+## 流的识别与生命周期
 
-停止程序：
+每条流由以下五个字段识别：
 
 ```text
-Ctrl-C
+源 IP、目的 IP、源端口、目的端口、传输层协议
 ```
 
-程序退出时输出当前流的统计信息。
+例如，`A:5000 → B:9999 / UDP` 与 `B:9999 → A:5000 / UDP` 是两条独立的流。
 
----
+- 流表最多保存 1024 个槽位，按五元组线性查找。
+- 每处理一个解析成功的数据包，先检查各条流是否空闲超过 30 秒；正好 30 秒时不会失效。没有后台定时清理线程。
+- 新流优先复用失效槽位；槽位复用时清零原有统计。
+- 流表全满且没有可复用槽位时，新的流无法创建；已有流仍可更新。
+- 结束汇总和导出仅包含当前槽位中至少收到两个有效包的流，包括尚未被复用的失效流。旧流一旦被覆盖，就不再保留其统计。
 
-## Output / 输出
+因此，导出文件是结束时流表中保留的统计，不是整次运行期间所有历史流的完整记录。
 
-每条 Flow 的统计信息包括：
+## 统计指标
+
+设一条流的连续有效包到达时间为 `t(n)`，内部时间单位为秒：
 
 ```text
-Flow
-Protocol
-Packets
-Avg interval
-Max interval
-Avg variation
-Max EWMA jitter
+I(n) = t(n) - t(n-1)                  到达间隔
+V(n) = |I(n) - I(n-1)|                相邻间隔变化量
+J(n) = J(n-1) + (V(n) - J(n-1)) / 16  EWMA 平滑值
 ```
 
-示例：
+第一个包初始化流；第二个包产生第一个间隔；第三个包起才更新变化量和 EWMA。时间戳早于该流上次有效到达时间的包会被忽略，零间隔则正常计入。
 
-```text
-Flow         : 127.0.0.1:5000 -> 127.0.0.2:9999
-Protocol     : UDP
-Packets      : 100
-Avg interval : 100.012 ms
-Max interval : 108.341 ms
-Avg variation: 1.237 ms
-Max EWMA jitter: 2.481 ms
+**这里测量的是到达间隔的变化。**程序没有使用发送端时间戳，结果同时受到发送节奏、网络传输及本机观测的影响，不能直接解释为网络单向时延的抖动，也不等同于 RTP 接收端的抖动指标。
+
+| 汇总字段 | 含义 |
+|---|---|
+| `Flow` | 源 IP:端口 → 目的 IP:端口 |
+| `Protocol` | TCP 或 UDP |
+| `Packets` | 该槽位中累计接受的有效包数 |
+| `Avg interval` | 间隔总和 / (包数 − 1) |
+| `Max interval` | 最大到达间隔 |
+| `Avg variation` | 变化量总和 / (包数 − 2)；只有两个包时为 0 |
+| `Max EWMA jitter` | 该流累计出现的最大 EWMA 值 |
+
+终端和导出文件中的时间指标均使用毫秒。逐包日志中的 `jitter` 是当前 EWMA 值，最终汇总中的 `Max EWMA jitter` 是其历史最大值。
+
+CSV 表头如下，实际为一行：
+
+```csv
+src_ip,dst_ip,src_port,dst_port,protocol,packets,avg_interval_ms,max_interval_ms,avg_variation_ms,max_ewma_jitter_ms
 ```
 
-### CSV
+JSON 以 `flows` 数组保存相同字段；没有符合导出条件的流时，数组为空。CSV 和 JSON 中的时间指标均保留三位小数。文件打开、写入或关闭失败时返回错误。
 
-```c
-src_ip,dst_ip,src_port,dst_port,protocol,packets,\
-avg_interval_ms,max_interval_ms,avg_variation_ms,\
-max_ewma_jitter_ms
-```
-
-### JSON
-
-统计信息也可以保存为结构化 JSON：
-
-```json
-{
-  "flows": [
-    {
-      "src_ip": "127.0.0.1",
-      "dst_ip": "127.0.0.2",
-      "src_port": 5000,
-      "dst_port": 9999,
-      "protocol": "UDP",
-      "packets": 100,
-      "avg_interval_ms": 100.012,
-      "max_interval_ms": 108.341,
-      "avg_variation_ms": 1.237,
-      "max_ewma_jitter_ms": 2.481
-    }
-  ]
-}
-```
-
----
-
-## Testing / 测试
-
-项目包含三个核心测试模块：
-
-```text
-tests/test_jitter.c
-tests/test_flow.c
-tests/test_packet.c
-```
-
-运行全部单元测试：
+## 测试
 
 ```bash
 make test
-```
-
-测试覆盖：
-
-### Jitter
-
-* 基本 jitter 更新
-* EWMA 更新过程
-* 边界情况
-
-### Flow
-
-* Flow 创建
-* interarrival interval 计算
-* EWMA jitter 更新
-* Flow timeout
-* inactive slot reuse
-* 异常时间戳处理
-
-### Packet parser
-
-* truncated Ethernet frame
-* non-IPv4 frame
-* truncated IPv4 header
-* invalid IPv4 IHL
-* truncated UDP header
-* truncated TCP header
-* unsupported protocol
-* valid UDP packet
-
----
-
-## AddressSanitizer / 内存安全检查
-
-使用 AddressSanitizer 编译并运行测试：
-
-```bash
 make asan
 ```
 
-该目标会分别构建：
+| 测试文件 | 覆盖内容 |
+|---|---|
+| `tests/test_jitter.c` | EWMA 更新及变化量为零时的衰减 |
+| `tests/test_flow.c` | 流创建与更新、时间戳倒退、超时边界、槽位复用和统计清零 |
+| `tests/test_packet.c` | 协议头截断、无效 IPv4 头长度、非支持协议、正常 UDP、带 IPv4 选项的 TCP 和微秒时间戳 |
 
-```text
-jitter_asan
-test_jitter_asan
-test_flow_asan
-test_packet_asan
+`make asan` 会构建 `jitter_asan` 和三个测试程序，并自动运行三个测试。它不会自动启动完整抓包程序；需要时单独运行：
+
+```bash
+sudo ./jitter_asan eth0 --filter "udp"
 ```
 
-用于检查常见内存安全问题，例如：
+测试通过说明这些已执行场景未发现相应问题，不代表所有输入或内存问题都已覆盖。
 
-* buffer overflow
-* use-after-free
-* invalid memory access
+### 生成测试流量
 
-当前核心测试均已通过 AddressSanitizer 检查。
+仓库提供 `tests/udp_sender.py`，需要 Python 3。运行前修改脚本中的 `target_ip` 为实际测试目标地址，并确认抓包网卡可以观察到发往该地址的流量。
 
----
+```bash
+# 终端一：抓取发往测试端口的 UDP 包
+sudo ./jitter eth0 --filter "udp dst port 9999"
 
-## Project Structure / 项目结构
+# 终端二：启动发包脚本
+python3 tests/udp_sender.py
+```
+
+脚本的 `base_interval` 控制基础发送间隔，`jitter_range` 控制随机等待范围，单位均为秒。可以分别用 `0.0` 和 `0.02` 的随机范围比较统计变化；即使设为 `0.0`，实际到达间隔仍可能受到系统调度等因素影响。
+
+## 源码结构
 
 ```text
 my-jitter/
-├── include/
-│   ├── capture.h
-│   ├── flow.h
-│   ├── jitter.h
-│   └── packet.h
-│
 ├── src/
-│   ├── capture.c
-│   ├── flow.c
-│   ├── jitter.c
-│   ├── main.c
-│   └── packet.c
-│
-├── tests/
-│   ├── test_flow.c
-│   ├── test_jitter.c
-│   ├── test_packet.c
-│   └── udp_sender.py
-│
+│   ├── main.c          命令行参数、抓包启动和结束导出
+│   ├── capture.c       libpcap 抓包、过滤器和包回调
+│   ├── packet.c        协议头长度检查、五元组和时间提取
+│   ├── flow.c          流表、超时、统计和输出
+│   └── jitter.c        EWMA 公式
+├── include/            结构体和函数声明
+├── tests/              三组单元测试和 UDP 发包脚本
+├── docs/code-reading.md
 ├── Makefile
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
----
-
-## Limitations / 当前限制
-
-当前版本有意控制在较小的实现范围内：
-
-* 目前主要支持 Ethernet + IPv4。
-* TCP 和 UDP 已支持。
-* 当前不支持 IPv6。
-* 当前未专门处理 VLAN-tagged Ethernet frames。
-* IPv4 fragmentation 不在当前解析范围内。
-* Flow 使用固定大小的 1024-slot table。
-* Jitter estimator 是基于 interarrival interval 的 EWMA 方法，而不是完整的 RTP/RTCP 实现。
-* 当前 Flow tracking 使用线性扫描，Flow 数量较大时查找成本为 `O(N)`。
-
----
-
-## Future Work / 后续计划
-
-可能的后续改进包括：
-
-* IPv6 packet parsing
-* VLAN-aware parsing
-* 更高效的 Flow hash table
-* 更完善的 Flow history management
-* 更丰富的 CLI 参数
-* 实时统计汇总
-* pcap file offline analysis
-* 更完整的性能 benchmark
-* RTP-specific jitter analysis
-
----
-
-## Technical Highlights / 技术亮点
-
-本项目重点练习和实现了以下网络编程与系统开发技术：
+阅读时先沿着一个包的处理路径走：
 
 ```text
-C
-│
-├── libpcap packet capture
-├── raw packet parsing
-├── IPv4 / TCP / UDP
-├── 5-tuple flow tracking
-├── timeout-based resource management
-├── EWMA statistics
-├── CSV / JSON serialization
-├── unit testing
-├── AddressSanitizer
-└── Makefile-based build system
+main → start_capture → pcap_loop
+                            ↓ 收到包时调用
+                       packet_handler
+                            ↓
+                       parse_packet
+                            ↓ 解析成功
+                       process_flow
+                       ├─ 标记超时
+                       ├─ 找到已有流 → update_flow → jitter_update
+                       └─ 找不到     → create_flow
 ```
 
-项目的核心目标不是复现一个大型网络分析器，而是在较小的代码规模内实现一个完整的：
+先弄懂 `packet_info_t` 如何保存一个包的解析结果，再看 `flow_t` 如何累计多个包的状态。终端格式化和 CSV/JSON 输出可以放到最后阅读。
 
-```text
-Packet Capture
-      ↓
-Packet Parsing
-      ↓
-Flow Tracking
-      ↓
-Statistical Analysis
-      ↓
-Structured Output
-```
+## 当前范围
 
-网络分析处理链。
+- 解析器按 Ethernet 帧布局读取数据，不自动适配其他链路层类型；应选用提供 Ethernet 帧的抓包接口。
+- 支持范围以 IPv4 TCP/UDP 为主，尚未实现 IPv6、VLAN 解析、IPv4 分片重组和完整协议合法性校验。
+- 使用固定数组和线性扫描，每个包的流表处理为 `O(N)`，其中 `N` 是已使用过的槽位数量。
+- 逐包打印日志，没有完成吞吐量基准测试，不能据此宣称支持高速无丢包抓取。
+- 目前没有 pcap 文件读取的命令行入口，也没有网络查询服务或多线程处理。

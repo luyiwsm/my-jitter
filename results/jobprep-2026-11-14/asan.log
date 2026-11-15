@@ -1,0 +1,29 @@
+./test_jitter_asan
+All jitter tests passed.
+./test_flow_asan
+Warning: negative packet interval
+Allocating new flow slot 0
+New flow created
+#2  interval=1000.000 ms  jitter=0.000 ms
+#3  interval=1000.000 ms  variation=0.000 ms  jitter=0.000 ms
+#4  interval=1015.000 ms  variation=15.000 ms  jitter=0.938 ms
+Flow expired (idle 40.0 s)
+Allocating new flow slot 0
+New flow created
+#2  interval=1000.000 ms  jitter=0.000 ms
+Flow expired (idle 56.0 s)
+Allocating new flow slot 0
+New flow created
+#2  interval=1000.000 ms  jitter=0.000 ms
+All flow tests passed.
+./test_packet_asan
+PASS: short Ethernet frame
+PASS: non-IPv4 frame
+PASS: short IPv4 header
+PASS: invalid IPv4 IHL
+PASS: truncated IPv4 header
+PASS: short UDP header
+PASS: short TCP header
+PASS: unsupported protocol
+PASS: valid UDP packet
+All packet tests passed.

@@ -75,6 +75,22 @@ int main(void)
     assert(flow_c != NULL);
     assert(flow_c->packet_count == 2);
 
+    /* 超时条件是超过 30 秒；正好 30 秒时仍然更新原来的流。 */
+    process_flow(0x0500007f, 0x0600007f, 5000, 6000, 17, 131.000);
+    assert(flow_c->packet_count == 3);
+    assert(close_enough(flow_c->total_interval, 31.0));
+    assert(close_enough(flow_c->max_interval, 30.0));
+    assert(close_enough(flow_c->total_variation, 29.0));
+    assert(close_enough(flow_c->jitter, 29.0 / 16.0));
+
+    /* 超过 30 秒后重新建流，旧统计不能残留在复用的槽位里。 */
+    process_flow(0x0500007f, 0x0600007f, 5000, 6000, 17, 161.001);
+    flow_c = flow_find(0x0500007f, 0x0600007f, 5000, 6000, 17);
+    assert(flow_c != NULL && flow_c->packet_count == 1);
+    assert(flow_c->total_interval == 0 && flow_c->total_variation == 0);
+    assert(flow_c->jitter == 0 && flow_c->max_jitter == 0);
+    assert(flow_c->last_interval == 0 && flow_c->max_interval == 0);
+
     printf("All flow tests passed.\n");
 
     return 0;

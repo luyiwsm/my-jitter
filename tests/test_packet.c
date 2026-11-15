@@ -6,6 +6,7 @@
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 
 #include "packet.h"
@@ -309,6 +310,39 @@ static void test_valid_udp(void)
 }
 
 
+/* 带 IPv4 选项的 TCP 包：检查传输层偏移和微秒时间戳。 */
+static void test_valid_tcp_with_ip_options(void)
+{
+    unsigned char packet[ETH_LEN + 24 + sizeof(struct tcphdr)] = {0};
+    struct pcap_pkthdr header;
+    packet_info_t info;
+    struct ether_header *eth = (struct ether_header *)packet;
+    struct ip *ip = (struct ip *)(packet + ETH_LEN);
+    struct tcphdr *tcp = (struct tcphdr *)(packet + ETH_LEN + 24);
+
+    eth->ether_type = htons(ETHERTYPE_IP);
+    ip->ip_v = 4;
+    ip->ip_hl = 6;
+    ip->ip_p = IPPROTO_TCP;
+    inet_pton(AF_INET, "192.0.2.1", &ip->ip_src);
+    inet_pton(AF_INET, "192.0.2.2", &ip->ip_dst);
+    tcp->th_sport = htons(12345);
+    tcp->th_dport = htons(443);
+    init_header(&header, sizeof packet);
+    header.ts.tv_usec = 250000;
+
+    assert(parse_packet(&header, packet, &info) == 0);
+    assert(info.src_ip == ip->ip_src.s_addr);
+    assert(info.dst_ip == ip->ip_dst.s_addr);
+    assert(info.src_port == 12345 && info.dst_port == 443);
+    assert(info.protocol == IPPROTO_TCP);
+    assert(info.arrival_time == 100.25);
+
+    header.caplen--;
+    assert(parse_packet(&header, packet, &info) == -1);
+    printf("PASS: TCP with IPv4 options and fractional timestamp\n");
+}
+
 int main(void)
 {
     test_short_ethernet();
@@ -320,6 +354,7 @@ int main(void)
     test_short_tcp_header();
     test_unsupported_protocol();
     test_valid_udp();
+    test_valid_tcp_with_ip_options();
 
     printf("All packet tests passed.\n");
 
