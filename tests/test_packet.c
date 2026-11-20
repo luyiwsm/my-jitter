@@ -343,6 +343,26 @@ static void test_valid_tcp_with_ip_options(void)
     printf("PASS: TCP with IPv4 options and fractional timestamp\n");
 }
 
+/* 非首片 IPv4 分片不含 UDP/TCP 端口头，应直接拒绝。 */
+static void test_ipv4_non_first_fragment(void)
+{
+    unsigned char packet[ETH_LEN + IP_LEN + sizeof(struct udphdr)] = {0};
+    struct pcap_pkthdr header;
+    packet_info_t info;
+    struct ether_header *eth = (struct ether_header *)packet;
+    struct ip *ip = (struct ip *)(packet + ETH_LEN);
+
+    eth->ether_type = htons(ETHERTYPE_IP);
+    ip->ip_v = 4;
+    ip->ip_hl = 5;
+    ip->ip_p = IPPROTO_UDP;
+    ip->ip_off = htons(1); /* 非首片分片（偏移 8 字节） */
+    init_header(&header, sizeof packet);
+
+    assert(parse_packet(&header, packet, &info) == -1);
+    printf("PASS: non-first IPv4 fragment rejected\n");
+}
+
 int main(void)
 {
     test_short_ethernet();
@@ -355,6 +375,7 @@ int main(void)
     test_unsupported_protocol();
     test_valid_udp();
     test_valid_tcp_with_ip_options();
+    test_ipv4_non_first_fragment();
 
     printf("All packet tests passed.\n");
 

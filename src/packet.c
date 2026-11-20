@@ -29,6 +29,12 @@ int parse_packet(const struct pcap_pkthdr *header,
     if (ip_length < 20 || header->caplen < offset + ip_length) {
         return -1;
     }
+        if (ip->ip_v != 4 || ip_length < 20 || header->caplen < offset + ip_length) {
+        return -1;
+    }
+    if ((ntohs(ip->ip_off) & IP_OFFMASK) != 0) {
+        return -1;
+    }
     offset += ip_length;
 
     /* 3. 传输层头：TCP、UDP 分别检查最小长度，再取端口。 */
