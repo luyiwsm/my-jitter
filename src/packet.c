@@ -26,10 +26,7 @@ int parse_packet(const struct pcap_pkthdr *header,
     }
     const struct ip *ip = (const struct ip *)(packet + offset);
     unsigned int ip_length = ip->ip_hl * 4;
-    if (ip_length < 20 || header->caplen < offset + ip_length) {
-        return -1;
-    }
-        if (ip->ip_v != 4 || ip_length < 20 || header->caplen < offset + ip_length) {
+    if (ip->ip_v != 4 || ip_length < 20 || header->caplen < offset + ip_length) {
         return -1;
     }
     if ((ntohs(ip->ip_off) & IP_OFFMASK) != 0) {
